@@ -1,4 +1,8 @@
-from typing import TypedDict, Optional, List, Literal
+from typing import TypedDict, Optional, List, Literal, Annotated
+import operator
+
+def replace_reducer(a, b):
+    return b
 
 class VideoState(TypedDict):
     # Inputs
@@ -20,11 +24,12 @@ class VideoState(TypedDict):
     
     # Short-form Artifacts
     short_script: Optional[str]
-    short_voice_path: Optional[str] # Added to support parallel execution
-    short_image_paths: Optional[List[str]] # Added to support parallel execution
+    short_voice_path: Optional[str]
+    short_image_paths: Optional[List[str]]
     short_video_path: Optional[str]
     short_title: Optional[str]
+    short_tags: Optional[List[str]]
     short_upload_status: Optional[str]
     
     # Common
-    error: Optional[str]
+    error: Annotated[Optional[str], replace_reducer]

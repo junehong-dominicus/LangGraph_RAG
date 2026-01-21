@@ -18,6 +18,16 @@ def route_content_type(state: VideoState) -> List[str]:
         return ["script_generator", "short_script_generator"]
     return ["script_generator"]
 
+def should_retry(state: VideoState) -> Literal["retry", "next"]:
+    """
+    Section 11.1: Retry logic based on error state.
+    """
+    # Check if error exists and we haven't exceeded max retries (e.g., 2)
+    if state.get("error") and state.get("retry_count", 0) < 2:
+        return "retry"
+    return "next"
+
+
 # Initialize Graph
 workflow = StateGraph(VideoState)
 
@@ -55,7 +65,13 @@ workflow.add_conditional_edges(
 )
 
 # Long Form Pipeline Flow
-workflow.add_edge("script_generator", "voice_generator")
+# Implements Section 11.1 Retry Logic for Script Generator
+workflow.add_conditional_edges(
+    "script_generator",
+    should_retry,
+    {"retry": "script_generator", "next": "voice_generator"}
+)
+
 workflow.add_edge("voice_generator", "asset_generator")
 workflow.add_edge("asset_generator", "video_composer")
 workflow.add_edge("video_composer", "metadata_generator")

@@ -1,5 +1,5 @@
 import logging
-from .graph import app
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -10,6 +10,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
+    try:
+        from langgraph_youtube_pipeline.graph import app
+    except ImportError as e:
+        logger.error(f"Failed to import application: {e}")
+        logger.error("Ensure directory is named 'langgraph_youtube_pipeline' and run with 'python -m langgraph_youtube_pipeline.main'")
+        sys.exit(1)
+
     # Example 1: Long form default
     logger.info(">>> Running Pipeline: Long Form")
     initial_state = {"topic": "The History of Computing", "retry_count": 0}
