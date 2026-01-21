@@ -36,8 +36,8 @@ The system uses a graph-based architecture where a typed `VideoState` is passed 
 ## Installation
 
 1.  Clone the repository.
-2.  **Note**: Rename the source directory `langgraph-youtube-pipeline` to `langgraph_youtube_pipeline` to support Python module imports.
-3.  Create virtual environment:
+2.  **Note**: Rename the directory to `langgraph_youtube_pipeline` if it contains hyphens (e.g., `langgraph-youtube-pipeline`), as Python modules cannot contain hyphens.
+3.  Create a virtual environment:
 
 ```bash
 uv venv
