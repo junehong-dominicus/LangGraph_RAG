@@ -1,164 +1,91 @@
-"""Retrieval-Augmented Generation module for fact-grounded content."""
-import os
-from pathlib import Path
-from typing import List, Dict
-from langchain_community.document_loaders import (
-    TextLoader,
-    DirectoryLoader,
-    PyPDFLoader,
-    UnstructuredMarkdownLoader,
-)
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS, Chroma
-from langchain_core.documents import Document
-from config import settings
-import logging
-
-logger = logging.getLogger(__name__)
+"""Data models for the blog content pipeline."""
+from pydantic import BaseModel, Field
+from typing import Literal
+from datetime import datetime
 
 
-class RAGSystem:
-    """Manages document ingestion, embedding, and retrieval."""
+class TopicSpec(BaseModel):
+    """Specification for a blog post topic."""
+    title: str = Field(description="Working title for the blog post")
+    description: str = Field(description="Brief description of what to cover")
+    keywords: list[str] = Field(default_factory=list, description="Target keywords")
+    target_audience: str = Field(default="technical readers", description="Target audience")
+    tone: str = Field(default="informative and engaging", description="Writing tone")
+
+
+class ResearchContext(BaseModel):
+    """Research context gathered for the blog post."""
+    sources: list[dict] = Field(default_factory=list, description="Source documents")
+    key_facts: list[str] = Field(default_factory=list, description="Extracted key facts")
+    references: list[str] = Field(default_factory=list, description="Reference URLs/paths")
+    confidence_score: float = Field(ge=0.0, le=1.0, description="Overall confidence")
+
+
+class OutlineSection(BaseModel):
+    """A section in the blog post outline."""
+    heading: str = Field(description="Section heading")
+    level: int = Field(ge=1, le=3, description="Heading level (1-3)")
+    content_points: list[str] = Field(default_factory=list, description="Key points to cover")
+    estimated_words: int = Field(default=200, description="Estimated word count")
+
+
+class BlogOutline(BaseModel):
+    """Complete blog post outline."""
+    title: str = Field(description="Final blog post title")
+    introduction: str = Field(description="Introduction summary")
+    sections: list[OutlineSection] = Field(description="Outline sections")
+    conclusion: str = Field(description="Conclusion summary")
+    total_estimated_words: int = Field(description="Total estimated word count")
+
+
+class BlogContent(BaseModel):
+    """Complete blog post content."""
+    title: str = Field(description="Blog post title")
+    content: str = Field(description="Full blog post content in Markdown")
+    meta_description: str = Field(description="SEO meta description")
+    tags: list[str] = Field(default_factory=list, description="Content tags")
+    category: str = Field(default="Tech", description="Content category")
+    word_count: int = Field(description="Actual word count")
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class QAResult(BaseModel):
+    """Quality assurance result."""
+    approved: bool = Field(description="Whether content is approved")
+    score: float = Field(ge=0.0, le=1.0, description="Quality score")
+    issues: list[str] = Field(default_factory=list, description="Identified issues")
+    suggestions: list[str] = Field(default_factory=list, description="Improvement suggestions")
+    factual_accuracy: float = Field(ge=0.0, le=1.0, description="Factual accuracy score")
+
+
+class PublishResult(BaseModel):
+    """Result of publishing attempt."""
+    success: bool = Field(description="Whether publishing succeeded")
+    post_url: str | None = Field(default=None, description="Published post URL")
+    post_id: str | None = Field(default=None, description="Platform post ID")
+    error_message: str | None = Field(default=None, description="Error message if failed")
+    published_at: datetime | None = Field(default=None, description="Publication timestamp")
+
+
+class PipelineState(BaseModel):
+    """State object for the LangGraph pipeline."""
+    # Input
+    topic: TopicSpec | None = None
     
-    def __init__(self):
-        self.embeddings = OpenAIEmbeddings(
-            model=settings.embedding_model,
-            openai_api_key=settings.openai_api_key
-        )
-        self.vector_store = None
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=settings.chunk_size,
-            chunk_overlap=settings.chunk_overlap,
-            separators=["\n\n", "\n", " ", ""],
-        )
-        
-    def load_documents(self, source_paths: List[str]) -> List[Document]:
-        """Load documents from various sources."""
-        documents = []
-        
-        for path in source_paths:
-            path_obj = Path(path)
-            
-            try:
-                if path_obj.is_file():
-                    documents.extend(self._load_single_file(path_obj))
-                elif path_obj.is_dir():
-                    documents.extend(self._load_directory(path_obj))
-                else:
-                    logger.warning(f"Path not found: {path}")
-            except Exception as e:
-                logger.error(f"Error loading {path}: {e}")
-                
-        logger.info(f"Loaded {len(documents)} documents")
-        return documents
+    # Intermediate
+    research_context: ResearchContext | None = None
+    outline: BlogOutline | None = None
+    draft_content: BlogContent | None = None
+    qa_result: QAResult | None = None
+    final_content: BlogContent | None = None
     
-    def _load_single_file(self, path: Path) -> List[Document]:
-        """Load a single file based on extension."""
-        suffix = path.suffix.lower()
-        
-        try:
-            if suffix == ".pdf":
-                loader = PyPDFLoader(str(path))
-            elif suffix == ".md":
-                loader = UnstructuredMarkdownLoader(str(path))
-            elif suffix in [".txt", ".py", ".json"]:
-                loader = TextLoader(str(path))
-            else:
-                logger.warning(f"Unsupported file type: {suffix}")
-                return []
-            
-            return loader.load()
-        except Exception as e:
-            logger.error(f"Error loading file {path}: {e}")
-            return []
+    # Output
+    publish_result: PublishResult | None = None
     
-    def _load_directory(self, path: Path) -> List[Document]:
-        """Load all supported files from a directory."""
-        documents = []
-        
-        for pattern in ["**/*.md", "**/*.txt", "**/*.pdf"]:
-            try:
-                loader = DirectoryLoader(
-                    str(path),
-                    glob=pattern,
-                    show_progress=True,
-                )
-                documents.extend(loader.load())
-            except Exception as e:
-                logger.error(f"Error loading directory {path} with pattern {pattern}: {e}")
-        
-        return documents
+    # Control
+    iteration_count: int = 0
+    current_stage: str = "initialized"
+    errors: list[str] = Field(default_factory=list)
     
-    def build_vector_store(self, documents: List[Document]) -> None:
-        """Build vector store from documents."""
-        if not documents:
-            logger.warning("No documents to build vector store")
-            return
-        
-        # Split documents into chunks
-        chunks = self.text_splitter.split_documents(documents)
-        logger.info(f"Split into {len(chunks)} chunks")
-        
-        # Create vector store
-        if settings.vector_store_type == "faiss":
-            self.vector_store = FAISS.from_documents(chunks, self.embeddings)
-            # Save to disk
-            os.makedirs(settings.vector_store_path, exist_ok=True)
-            self.vector_store.save_local(settings.vector_store_path)
-            logger.info(f"FAISS vector store saved to {settings.vector_store_path}")
-        else:  # chroma
-            self.vector_store = Chroma.from_documents(
-                chunks,
-                self.embeddings,
-                persist_directory=settings.vector_store_path
-            )
-            logger.info(f"Chroma vector store saved to {settings.vector_store_path}")
-    
-    def load_vector_store(self) -> bool:
-        """Load existing vector store from disk."""
-        try:
-            if settings.vector_store_type == "faiss":
-                self.vector_store = FAISS.load_local(
-                    settings.vector_store_path,
-                    self.embeddings,
-                    allow_dangerous_deserialization=True
-                )
-            else:  # chroma
-                self.vector_store = Chroma(
-                    persist_directory=settings.vector_store_path,
-                    embedding_function=self.embeddings
-                )
-            logger.info("Vector store loaded successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Error loading vector store: {e}")
-            return False
-    
-    def retrieve(self, query: str, k: int = 5) -> List[Document]:
-        """Retrieve relevant documents for a query."""
-        if not self.vector_store:
-            logger.warning("Vector store not initialized")
-            return []
-        
-        try:
-            docs = self.vector_store.similarity_search(query, k=k)
-            logger.info(f"Retrieved {len(docs)} documents for query: {query[:50]}...")
-            return docs
-        except Exception as e:
-            logger.error(f"Error retrieving documents: {e}")
-            return []
-    
-    def retrieve_with_scores(self, query: str, k: int = 5) -> List[tuple[Document, float]]:
-        """Retrieve documents with relevance scores."""
-        if not self.vector_store:
-            logger.warning("Vector store not initialized")
-            return []
-        
-        try:
-            docs_with_scores = self.vector_store.similarity_search_with_score(query, k=k)
-            logger.info(f"Retrieved {len(docs_with_scores)} documents with scores")
-            return docs_with_scores
-        except Exception as e:
-            logger.error(f"Error retrieving documents with scores: {e}")
-            return []
+    class Config:
+        arbitrary_types_allowed = True

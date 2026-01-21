@@ -1,16 +1,15 @@
 """Retrieval-Augmented Generation module for fact-grounded content."""
 import os
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 from langchain_community.document_loaders import (
     TextLoader,
     DirectoryLoader,
     PyPDFLoader,
-    UnstructuredMarkdownLoader,
 )
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS, Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from config import settings
 import logging
@@ -60,10 +59,8 @@ class RAGSystem:
         try:
             if suffix == ".pdf":
                 loader = PyPDFLoader(str(path))
-            elif suffix == ".md":
-                loader = UnstructuredMarkdownLoader(str(path))
-            elif suffix in [".txt", ".py", ".json"]:
-                loader = TextLoader(str(path))
+            elif suffix in [".md", ".txt", ".py", ".json"]:
+                loader = TextLoader(str(path), encoding='utf-8')
             else:
                 logger.warning(f"Unsupported file type: {suffix}")
                 return []
@@ -100,35 +97,22 @@ class RAGSystem:
         chunks = self.text_splitter.split_documents(documents)
         logger.info(f"Split into {len(chunks)} chunks")
         
-        # Create vector store
-        if settings.vector_store_type == "faiss":
-            self.vector_store = FAISS.from_documents(chunks, self.embeddings)
-            # Save to disk
-            os.makedirs(settings.vector_store_path, exist_ok=True)
-            self.vector_store.save_local(settings.vector_store_path)
-            logger.info(f"FAISS vector store saved to {settings.vector_store_path}")
-        else:  # chroma
-            self.vector_store = Chroma.from_documents(
-                chunks,
-                self.embeddings,
-                persist_directory=settings.vector_store_path
-            )
-            logger.info(f"Chroma vector store saved to {settings.vector_store_path}")
+        # Create FAISS vector store
+        self.vector_store = FAISS.from_documents(chunks, self.embeddings)
+        
+        # Save to disk
+        os.makedirs(settings.vector_store_path, exist_ok=True)
+        self.vector_store.save_local(settings.vector_store_path)
+        logger.info(f"FAISS vector store saved to {settings.vector_store_path}")
     
     def load_vector_store(self) -> bool:
         """Load existing vector store from disk."""
         try:
-            if settings.vector_store_type == "faiss":
-                self.vector_store = FAISS.load_local(
-                    settings.vector_store_path,
-                    self.embeddings,
-                    allow_dangerous_deserialization=True
-                )
-            else:  # chroma
-                self.vector_store = Chroma(
-                    persist_directory=settings.vector_store_path,
-                    embedding_function=self.embeddings
-                )
+            self.vector_store = FAISS.load_local(
+                settings.vector_store_path,
+                self.embeddings,
+                allow_dangerous_deserialization=True
+            )
             logger.info("Vector store loaded successfully")
             return True
         except Exception as e:

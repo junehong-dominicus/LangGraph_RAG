@@ -1,164 +1,65 @@
-"""Retrieval-Augmented Generation module for fact-grounded content."""
+"""Configuration management for the blog content pipeline."""
 import os
-from pathlib import Path
-from typing import List, Dict
-from langchain_community.document_loaders import (
-    TextLoader,
-    DirectoryLoader,
-    PyPDFLoader,
-    UnstructuredMarkdownLoader,
-)
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS, Chroma
-from langchain_core.documents import Document
-from config import settings
-import logging
+from dotenv import load_dotenv
+from typing import Literal
 
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
 
 
-class RAGSystem:
-    """Manages document ingestion, embedding, and retrieval."""
+class Settings:
+    """Application settings loaded from environment variables."""
     
     def __init__(self):
-        self.embeddings = OpenAIEmbeddings(
-            model=settings.embedding_model,
-            openai_api_key=settings.openai_api_key
-        )
-        self.vector_store = None
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=settings.chunk_size,
-            chunk_overlap=settings.chunk_overlap,
-            separators=["\n\n", "\n", " ", ""],
-        )
+        # API Keys
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        self.langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
+        self.tistory_api_key = os.getenv("TISTORY_API_KEY")
+        self.tistory_blog_name = os.getenv("TISTORY_BLOG_NAME")
         
-    def load_documents(self, source_paths: List[str]) -> List[Document]:
-        """Load documents from various sources."""
-        documents = []
+        # LangSmith Configuration
+        self.langsmith_project = os.getenv("LANGSMITH_PROJECT", "blog-content-pipeline")
+        self.langsmith_tracing = os.getenv("LANGSMITH_TRACING", "true").lower() == "true"
         
-        for path in source_paths:
-            path_obj = Path(path)
-            
-            try:
-                if path_obj.is_file():
-                    documents.extend(self._load_single_file(path_obj))
-                elif path_obj.is_dir():
-                    documents.extend(self._load_directory(path_obj))
-                else:
-                    logger.warning(f"Path not found: {path}")
-            except Exception as e:
-                logger.error(f"Error loading {path}: {e}")
-                
-        logger.info(f"Loaded {len(documents)} documents")
-        return documents
-    
-    def _load_single_file(self, path: Path) -> List[Document]:
-        """Load a single file based on extension."""
-        suffix = path.suffix.lower()
+        # Model Configuration
+        self.llm_model = os.getenv("LLM_MODEL", "gpt-4-turbo-preview")
+        self.llm_temperature = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+        self.research_model = os.getenv("RESEARCH_MODEL", "gpt-4-turbo-preview")
+        self.research_temperature = float(os.getenv("RESEARCH_TEMPERATURE", "0.3"))
+        self.critic_model = os.getenv("CRITIC_MODEL", "gpt-4-turbo-preview")
+        self.critic_temperature = float(os.getenv("CRITIC_TEMPERATURE", "0.2"))
         
-        try:
-            if suffix == ".pdf":
-                loader = PyPDFLoader(str(path))
-            elif suffix == ".md":
-                loader = UnstructuredMarkdownLoader(str(path))
-            elif suffix in [".txt", ".py", ".json"]:
-                loader = TextLoader(str(path))
-            else:
-                logger.warning(f"Unsupported file type: {suffix}")
-                return []
-            
-            return loader.load()
-        except Exception as e:
-            logger.error(f"Error loading file {path}: {e}")
-            return []
-    
-    def _load_directory(self, path: Path) -> List[Document]:
-        """Load all supported files from a directory."""
-        documents = []
+        # Vector Store Configuration
+        self.vector_store_path = os.getenv("VECTOR_STORE_PATH", "./data/vector_store")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        self.chunk_size = int(os.getenv("CHUNK_SIZE", "1000"))
+        self.chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "200"))
         
-        for pattern in ["**/*.md", "**/*.txt", "**/*.pdf"]:
-            try:
-                loader = DirectoryLoader(
-                    str(path),
-                    glob=pattern,
-                    show_progress=True,
-                )
-                documents.extend(loader.load())
-            except Exception as e:
-                logger.error(f"Error loading directory {path} with pattern {pattern}: {e}")
+        # Pipeline Configuration
+        self.max_research_iterations = int(os.getenv("MAX_RESEARCH_ITERATIONS", "3"))
+        self.max_writing_iterations = int(os.getenv("MAX_WRITING_ITERATIONS", "2"))
+        self.max_critic_iterations = int(os.getenv("MAX_CRITIC_ITERATIONS", "2"))
+        self.fact_confidence_threshold = float(os.getenv("FACT_CONFIDENCE_THRESHOLD", "0.8"))
+        self.enable_manual_approval = os.getenv("ENABLE_MANUAL_APPROVAL", "false").lower() == "true"
         
-        return documents
-    
-    def build_vector_store(self, documents: List[Document]) -> None:
-        """Build vector store from documents."""
-        if not documents:
-            logger.warning("No documents to build vector store")
-            return
+        # Content Configuration
+        self.target_word_count = int(os.getenv("TARGET_WORD_COUNT", "1500"))
+        self.min_word_count = int(os.getenv("MIN_WORD_COUNT", "800"))
+        self.max_word_count = int(os.getenv("MAX_WORD_COUNT", "3000"))
         
-        # Split documents into chunks
-        chunks = self.text_splitter.split_documents(documents)
-        logger.info(f"Split into {len(chunks)} chunks")
+        # Publishing Configuration
+        self.publish_mode = os.getenv("PUBLISH_MODE", "draft")
+        self.auto_publish = os.getenv("AUTO_PUBLISH", "false").lower() == "true"
+        self.default_category = os.getenv("DEFAULT_CATEGORY", "Tech")
         
-        # Create vector store
-        if settings.vector_store_type == "faiss":
-            self.vector_store = FAISS.from_documents(chunks, self.embeddings)
-            # Save to disk
-            os.makedirs(settings.vector_store_path, exist_ok=True)
-            self.vector_store.save_local(settings.vector_store_path)
-            logger.info(f"FAISS vector store saved to {settings.vector_store_path}")
-        else:  # chroma
-            self.vector_store = Chroma.from_documents(
-                chunks,
-                self.embeddings,
-                persist_directory=settings.vector_store_path
-            )
-            logger.info(f"Chroma vector store saved to {settings.vector_store_path}")
-    
-    def load_vector_store(self) -> bool:
-        """Load existing vector store from disk."""
-        try:
-            if settings.vector_store_type == "faiss":
-                self.vector_store = FAISS.load_local(
-                    settings.vector_store_path,
-                    self.embeddings,
-                    allow_dangerous_deserialization=True
-                )
-            else:  # chroma
-                self.vector_store = Chroma(
-                    persist_directory=settings.vector_store_path,
-                    embedding_function=self.embeddings
-                )
-            logger.info("Vector store loaded successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Error loading vector store: {e}")
-            return False
-    
-    def retrieve(self, query: str, k: int = 5) -> List[Document]:
-        """Retrieve relevant documents for a query."""
-        if not self.vector_store:
-            logger.warning("Vector store not initialized")
-            return []
+        # Parse default tags
+        tags_str = os.getenv("DEFAULT_TAGS", "AI,Tech,Tutorial")
+        self.default_tags = [tag.strip() for tag in tags_str.split(",")]
         
-        try:
-            docs = self.vector_store.similarity_search(query, k=k)
-            logger.info(f"Retrieved {len(docs)} documents for query: {query[:50]}...")
-            return docs
-        except Exception as e:
-            logger.error(f"Error retrieving documents: {e}")
-            return []
-    
-    def retrieve_with_scores(self, query: str, k: int = 5) -> List[tuple[Document, float]]:
-        """Retrieve documents with relevance scores."""
-        if not self.vector_store:
-            logger.warning("Vector store not initialized")
-            return []
-        
-        try:
-            docs_with_scores = self.vector_store.similarity_search_with_score(query, k=k)
-            logger.info(f"Retrieved {len(docs_with_scores)} documents with scores")
-            return docs_with_scores
-        except Exception as e:
-            logger.error(f"Error retrieving documents with scores: {e}")
-            return []
+        # Logging
+        self.log_level = os.getenv("LOG_LEVEL", "INFO")
+        self.log_file = os.getenv("LOG_FILE", "./logs/pipeline.log")
+
+
+# Global settings instance
+settings = Settings()
