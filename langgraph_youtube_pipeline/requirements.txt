@@ -3,3 +3,4 @@ langchain
 moviepy
 openai
 google-api-python-client
+python-dotenv
