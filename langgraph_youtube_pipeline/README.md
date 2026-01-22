@@ -2,6 +2,9 @@
 
 An automated system built with **LangGraph** that plans, generates, produces, and uploads YouTube videos (Long-form and Shorts) based on a topic strategy.
 
+## The repository has been moved. You can now find it at:  
+## https://github.com/junehong-dominicus/langgraph_youtube_pipeline
+
 ## Overview
 
 This project orchestrates a stateful workflow using LangGraph to minimize human intervention in content creation. It handles the entire pipeline from topic selection to YouTube upload, ensuring reliability through structured state management.
