@@ -5,9 +5,6 @@
 
 LangChain is an open-source framework designed to simplify the development of applications powered by Large Language Models (LLMs) like GPT-4, Claude, or Llama. It provides the "glue" code necessary to connect LLMs to other data sources and computational tools.
 
-## The repository has been moved. You can now find it at:  
-## https://github.com/junehong-dominicus/automated_blog_content_pipeline
-
 - **Core Philosophy**: LLMs are powerful but isolated. They don't know about your private data, they can't take actions (like sending emails), and they don't have memory of past conversations by default. LangChain solves this.
 - **Key Components**:
   - **Chains**: Sequences of calls (e.g., Prompt → LLM → Output Parser).
