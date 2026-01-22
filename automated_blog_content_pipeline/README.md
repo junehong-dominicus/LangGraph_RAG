@@ -1,9 +1,9 @@
+### The repository has been moved. You can now find it at:  
+### https://github.com/junehong-dominicus/automated_blog_content_pipeline
+
 # Automated Blog Content Pipeline
 
 An end-to-end automated content generation pipeline for publishing high-quality blog posts to Tistory using **LangChain**, **RAG (Retrieval-Augmented Generation)**, and **LangGraph**.
-
-## The repository has been moved. You can now find it at:  
-## https://github.com/junehong-dominicus/automated_blog_content_pipeline
 
 ## 🎯 Features
 
